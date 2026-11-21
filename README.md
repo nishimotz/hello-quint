@@ -41,7 +41,7 @@ npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 
 ### 同じバグを pytest で捕まえようとすると
 
-`TicketService` は記事の `ticket-service.ts` を Python に読み替えた想定コード。
+`TicketService` は記事の `ticket-service.ts` を Python に読み替えた想定コード。[docs/compare-pytest.md](docs/compare-pytest.md) に動く版を置いた。
 
 ```python
 def test_sequential_purchase():
