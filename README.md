@@ -28,6 +28,7 @@ npx quint run ticket.qnt --invariant=noOversell
 npx quint run ticket_fixed.qnt --invariant=noOversell
 
 # 3. 修正版: 到達可能な状態を全部調べる
+#    注意: 既定の JVM が古いと失敗する → docs/macos-intel.md
 npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 ```
 
@@ -44,19 +45,21 @@ npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 `TicketService` は記事の `ticket-service.ts` を Python に読み替えた想定コード。[docs/compare-pytest.md](docs/compare-pytest.md) に動く版を置いた。
 
 ```python
-def test_sequential_purchase():
-    svc = TicketService(stock=2)
+# AI が書いたテスト（docs/compare-pytest/test_ticket_service.py より抜粋、名前は実物どおり）
+def test_can_buy_when_in_stock():
+    svc = TicketService(2, USERS)
     svc.check("alice")
     svc.purchase("alice")
     assert svc.stock == 1
+    assert svc.sold == 1
 
-def test_sold_out():
-    svc = TicketService(stock=0)
+def test_sold_out_when_no_stock():
+    svc = TicketService(0, USERS)
     svc.check("alice")
     assert svc.phase["alice"] == "SoldOut"
 ```
 
-この2本は通る。しかし**割り込みのバグは出てこない**。テストケースを書いた人が「確認と確定の間に他人が買う」場面を思いついていないから。AI に書かせても同じで、実装した AI が想定していない場面はテストにも現れない（自作自演の満点）。
+実物はもう1本（`test_two_sequential_purchases`）あり、**3本とも通る**。しかし**割り込みのバグは出てこない**。テストケースを書いた人が「確認と確定の間に他人が買う」場面を思いついていないから。AI に書かせても同じで、実装した AI が想定していない場面はテストにも現れない（自作自演の満点）。
 
 ### Quint ではケースを書かない
 
@@ -67,18 +70,20 @@ val noOversell = sold <= INITIAL_STOCK
 これがルール。ケースは1つも書いていない。誰がどの順番で操作するかは `quint run` が勝手に決める。
 
 ```
-$ npx quint run ticket.qnt --invariant=noOversell
+$ npx quint run ticket.qnt --invariant=noOversell --seed=0x1d882ec7345faa98
 
 [State 3] { phase: Map("alice" -> Checked, "bob" -> Checked, "carol" -> Checked), sold: 0, stock: 2 }
 [State 4] { phase: Map("alice" -> Bought,  "bob" -> Checked, "carol" -> Checked), sold: 1, stock: 1 }
 [State 5] { phase: Map("alice" -> Bought,  "bob" -> Bought,  "carol" -> Checked), sold: 2, stock: 0 }
 [State 6] { phase: Map("alice" -> Bought,  "bob" -> Bought,  "carol" -> Bought),  sold: 3, stock: -1 }
 
-[violation] Found an issue (19ms at 1000 traces/second).
+[violation] Found an issue (19ms at 53 traces/second).
 error: Invariant violated
 ```
 
-**3人が確認してから3人が確定した**。在庫は2枚しかない。State 6 で `stock: -1`、`sold: 3`。
+`quint run` はランダムなので、**手順は実行ごとに変わる**。上のトレースは `--seed` で固定した一例（seed を省略すると別の順序で同じ違反に着く）。最後の State 6（`sold: 3, stock: -1`）だけは、どの手順でも同じ。
+
+この実行では alice と bob が先に確認して在庫1枚まで減り、carol が最後の1枚を買ったあとに bob が確定している。在庫は2枚しかない。**順序は問わない** — 確認と確定が交錯すれば `sold` は 2 を超え得る。
 
 `pytest` が落ちたときと同じ体験。**違うのは、落ちた原因が「書かなかったケース」ではなく「破られたルール」として示されること**。手順まで出るので、どこで破れたかがそのまま読める。
 
@@ -89,10 +94,10 @@ error: Invariant violated
 | 人間が書くもの | テストケース（入力と期待値） | ルール（不変条件） |
 | ケースの生成 | 人間 | 機械（ランダム or 全探索） |
 | 失敗したとき | テスト名と assert の場所 | 破ったルールと手順トレース |
-| 通ったときの意味 | 書いたケースの範囲で正しい | `run` は確率的、`verify` は全状態 |
+| 通ったときの意味 | 書いたケースの範囲で正しい | `run` は確率的、`verify` はこのモデルの全状態で正しい |
 | 増やすコスト | ケース1本ずつ | ルール1行（対象は自動で広がる） |
 
-「全部試した」と言えるのは `quint verify --backend=tlc` のほうだけ。`quint run` はランダムなので pytest より広いが保証はない。この区別は教材で明示する。
+「全部試した」と言えるのは `quint verify --backend=tlc` のほうだけ。`quint run` はランダムなので pytest より広いが保証はない。
 
 ---
 
@@ -141,7 +146,7 @@ def Inv (s : St) : Prop := 0 ≤ s.stock ∧ s.sold + s.stock = 2
 | 順番 | リポジトリ | 得られるもの |
 |---|---|---|
 | 1 | ここ（hello-quint） | ルールを書けばケースを書かなくていい、という体験。`quint run` が pytest の代わり |
-| 2 | hello-lean-proof | 同じ題材を、状態数を数えずに一般化する。`Inv` 強化の必然性 |
+| 2 | hello-lean-proof [docs/formal-rules.md](https://github.com/nishimotz/hello-lean-proof/blob/main/docs/formal-rules.md) | 同じ題材の解説。`Inv` 強化の必然性と、`Exercises/07_state_invariant` の演習7問 |
 | 3 | ここに戻る | `quint verify` の「29状態を全部見た」と Lean の「任意の人数で成り立つ」の違いを言語化 |
 
 ### 正直に書く弱点
@@ -149,6 +154,18 @@ def Inv (s : St) : Prop := 0 ≤ s.stock ∧ s.sold + s.stock = 2
 記事の山場の一つ「モデルベーステストで1000トレース生成 → AI の実装が578本で不一致」は、**Lean 単体では閉じない**。実装（TypeScript など）とモデルをつなぐ層が要る。Quint は `--mbt` でこの層を自前で持っている。Lean で同じことをやるなら抽出か外部突き合わせになる。ここは Lean 連載の弱点として明示する。
 
 ---
+
+## 最初に押さえる3つの記法
+
+Quint を読むのに要るのはこの3つだけ。
+
+- `all { ... }` — **中身が全部成り立つときだけ、この操作ができる**。条件と「次の状態での値」を並べる。条件が偽ならその手は起きない（盤面は変わらない）
+- `any { ... }` — **どれか1つを選んで実行する**。「全部実行」ではない
+- `nondet u = USERS.oneOf()` — **誰か1人を非決定的に選ぶ**。どの1人を選ぶかは機械が決める（だから人間が思いつかない順序も試される）
+
+`stock'` の `'` は「次の時点の値」。`stock' = stock - 1` は「次の在庫は今の在庫から1引いたもの」。
+
+**不変条件**（invariant）は「初期状態で成り立ち、どの操作をしても成り立ち続ける性質」。**モデル検査**（`quint verify`）は、到達可能な状態を機械的に全部たどって不変条件が破れないか調べる手法。
 
 ## ファイルの見方
 
@@ -176,6 +193,8 @@ action purchase(u: str): bool = all {
   },
 }
 ```
+
+`else` 側で `SoldOut` に落とすのは設計判断。`purchase` の前提を `stock > 0` に狭めると、在庫切れのあとの確定操作が「起きない」ことになり、確認済みの人が残ったまま止まる。フェーズを `SoldOut` に進めて在庫も `sold` も変えないことで、「確定しようとしたが買えなかった」を状態として表現している。
 
 ## 実測値
 

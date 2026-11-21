@@ -69,13 +69,18 @@ $ uv run --with pytest pytest -q test_ticket_service.py
 
 ## 割り込みを自分で書くと捕まる
 
+まず、**書いてはいけない例**。前提が崩れることをテストで観測できないと、バグは見えない。
+
 ```python
-def test_interleaved_check_purchase():
+def test_interleaved_wrong():
     svc = TicketService(2, USERS)
     svc.check("bob")
     svc.check("carol")
-    svc.purchase("alice_from_checked")  # ← 前提が崩れる
+    svc.purchase("alice_from_checked")   # 確認していない人が買う
+    # ← ここで何も assert しない
 ```
+
+この実装は前提を検査しないので、`purchase` は**例外も出さず stock を減らす**。`assert` が無いのでテストは通る。「前提が崩れる」と書いただけでは、実行しても何も起きない。**壊れたことを観測する仕掛け（不変条件の assert）を自分で置かないと、pytest は何も言わない** — これがこの節の要点。
 
 正しくはこう:
 
@@ -88,6 +93,8 @@ def test_interleaved_check_purchase():
     svc.purchase("bob")                          # それでも bob は買える → 売り越し
     assert svc.stock >= 0   # ← ここで落ちる
 ```
+
+**`assert svc.stock >= 0` が、Quint の `noOversell` を手で書いたもの**。ケース（操作手順）とルール（不変条件）を両方自分で書いている。Quint ではルールだけ書けば手順は機械が作る。
 
 ```
 $ uv run --with pytest pytest -q test_interleaved.py
@@ -105,9 +112,11 @@ FAILED test_interleaved.py::test_interleaved_check_purchase
 |---|---|---|
 | 割り込みを思いつく必要 | ある | ない（機械が順序を生成する） |
 | 同じバグを捕まえるのに必要な行数 | 6行（思いつけば） | 1行（`val noOversell = sold <= INITIAL_STOCK`） |
-| 通ったときの意味 | 書いたケースの範囲で正しい | `verify` なら全状態で正しい |
+| 通ったときの意味 | 書いたケースの範囲で正しい | `verify` ならこのモデルの全状態で正しい |
 
 pytest が悪いのではない。**ケースを書く方式である限り、書いた人の想像力が上限になる**という話。Quint はその上限を外す。
+
+ただし `verify` の「全状態」は、`USERS` が3人・`INITIAL_STOCK` が2 という**この固定モデルの中での全状態**。4人に増やせば状態空間は変わり、TLC が同じ結果を出し直すわけではない。一般化は Lean 側の仕事（[hello-lean-proof の docs/formal-rules.md](https://github.com/nishimotz/hello-lean-proof/blob/main/docs/formal-rules.md)）。
 
 ## 試す
 
