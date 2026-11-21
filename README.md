@@ -101,3 +101,15 @@ Lean 側で `noOversell`（`sold ≤ 2`）を単独で帰納法に載せると�
 ## ライセンス
 
 MIT
+
+## クリーンクローンでの再現確認（2026-11-22）
+
+公開後に別ディレクトリへ clone して `npm install` から通した実測:
+
+| コマンド | 結果 |
+|---|---|
+| `quint run ticket.qnt --invariant=noOversell` | `[violation] Found an issue (19ms at 1000 traces/second)`、`sold: 3` |
+| `quint run ticket_fixed.qnt --invariant=noOversell` | `[ok] No violation found (64ms)` |
+| `quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc` | `55 states generated, 29 distinct states found, 0 states left on queue`、`[ok] (606ms)` |
+
+TLC 起動時に protobuf の警告が1行出るが、探索結果には影響しない。
