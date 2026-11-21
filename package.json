@@ -1,0 +1,14 @@
+{
+  "name": "hello-quint",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Quint (TLA+系) でルール（不変条件）を書いて売り越しバグを捕まえる最小例",
+  "scripts": {
+    "buggy": "quint run ticket.qnt --invariant=noOversell",
+    "fixed": "quint run ticket_fixed.qnt --invariant=noOversell",
+    "verify": "quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc"
+  },
+  "dependencies": {
+    "@informalsystems/quint": "0.33.1"
+  }
+}
