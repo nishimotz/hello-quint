@@ -4,7 +4,9 @@ TLA+ 系の仕様言語 **Quint** で「テストケースではなくルール�
 
 題材はチケット販売。確認画面で在庫を見て、確定ボタンで在庫を1枚減らす。AI が書いた実装は確定時に在庫を再確認しないので、確認と確定の間に他人が買うと在庫が負になる（売り越し）。
 
-このリポジトリは `ticket.qnt`（バグあり）と `ticket_fixed.qnt`（修正版）を並べ、`noOversell` という1本のルールだけでバグを捕まえる。
+`ticket.qnt`（バグあり）と `ticket_fixed.qnt`（修正版）を並べ、`noOversell` という1本のルールだけでバグを捕まえる。
+
+**このリポジトリの狙いは2つ**。Python の `pytest` と体験を比べること、そして [hello-lean-proof](https://github.com/nishimotz/hello-lean-proof) の続きとして読めること。
 
 ## 元ネタ
 
@@ -18,7 +20,6 @@ TLA+ 系の仕様言語 **Quint** で「テストケースではなくルール�
 
 ```bash
 npm install
-npx quint --version   # 0.33.1
 
 # 1. バグあり: ルール違反の手順が出る
 npx quint run ticket.qnt --invariant=noOversell
@@ -30,35 +31,126 @@ npx quint run ticket_fixed.qnt --invariant=noOversell
 npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 ```
 
-### 実測値（2026-11-22, macOS 15.8.3 x64, Node 24.22.3）
+`quint verify` だけは新しい JVM を要求する（Apalache の都合）。環境構築で詰まったら [docs/macos-intel.md](docs/macos-intel.md) を見る。Linux / Apple Silicon では不要な可能性が高い。
 
-| コマンド | 結果 |
-|---|---|
-| `quint run ticket.qnt --invariant=noOversell` | `[violation] Found an issue (1924ms at 12 traces/second)`。State 0〜6 で `stock: -1, sold: 3` |
-| `quint run ticket_fixed.qnt --invariant=noOversell` | `[ok] No violation found (74ms at 135135 traces/second)` |
-| `quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc` | `55 states generated, 29 distinct states found, 0 states left on queue`、深さ 7、`[ok] (606ms)` |
+---
 
-`quint run` の 1924ms は元記事の「12ms」と桁が違う。記事の環境依存なので、ここでは実測をそのまま置く。重要なのは**ミリ秒で反例が出る**という性質のほう。
+## pytest との体験比較
 
-## `quint verify` には新しい JVM が要る
+**Quint は「テストを書いて走らせる」の形を保ったまま、書くものをケースからルールに置き換える。** ここが Python 利用者にとっての入口になる。
 
-`--backend=tlc` は内部で Apalache 経由の TLA+ 変換を行う。既定の `java` が 11 だと落ちる:
+### 同じバグを pytest で捕まえようとすると
+
+`TicketService` は記事の `ticket-service.ts` を Python に読み替えた想定コード。
+
+```python
+def test_sequential_purchase():
+    svc = TicketService(stock=2)
+    svc.check("alice")
+    svc.purchase("alice")
+    assert svc.stock == 1
+
+def test_sold_out():
+    svc = TicketService(stock=0)
+    svc.check("alice")
+    assert svc.phase["alice"] == "SoldOut"
+```
+
+この2本は通る。しかし**割り込みのバグは出てこない**。テストケースを書いた人が「確認と確定の間に他人が買う」場面を思いついていないから。AI に書かせても同じで、実装した AI が想定していない場面はテストにも現れない（自作自演の満点）。
+
+### Quint ではケースを書かない
 
 ```
-Unrecognized VM option 'G1PeriodicGCInterval=600000'
-Error: Could not create the Java Virtual Machine.
+val noOversell = sold <= INITIAL_STOCK
 ```
 
-Apalache 0.62.4 が新しい JVM のオプションを渡すため。手元では Homebrew の `openjdk`（26）を指すと通った:
+これがルール。ケースは1つも書いていない。誰がどの順番で操作するかは `quint run` が勝手に決める。
 
-```bash
-export JAVA_HOME=/usr/local/opt/openjdk
-npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
+```
+$ npx quint run ticket.qnt --invariant=noOversell
+
+[State 3] { phase: Map("alice" -> Checked, "bob" -> Checked, "carol" -> Checked), sold: 0, stock: 2 }
+[State 4] { phase: Map("alice" -> Bought,  "bob" -> Checked, "carol" -> Checked), sold: 1, stock: 1 }
+[State 5] { phase: Map("alice" -> Bought,  "bob" -> Bought,  "carol" -> Checked), sold: 2, stock: 0 }
+[State 6] { phase: Map("alice" -> Bought,  "bob" -> Bought,  "carol" -> Bought),  sold: 3, stock: -1 }
+
+[violation] Found an issue (19ms at 1000 traces/second).
+error: Invariant violated
 ```
 
-Intel Mac の Homebrew は `/usr/local`、Apple Silicon は `/opt/homebrew`。`/usr/libexec/java_home -V` で入っている一覧が見える。
+**3人が確認してから3人が確定した**。在庫は2枚しかない。State 6 で `stock: -1`、`sold: 3`。
 
-## 何を見るファイルか
+`pytest` が落ちたときと同じ体験。**違うのは、落ちた原因が「書かなかったケース」ではなく「破られたルール」として示されること**。手順まで出るので、どこで破れたかがそのまま読める。
+
+### 対応表
+
+| | pytest | Quint |
+|---|---|---|
+| 人間が書くもの | テストケース（入力と期待値） | ルール（不変条件） |
+| ケースの生成 | 人間 | 機械（ランダム or 全探索） |
+| 失敗したとき | テスト名と assert の場所 | 破ったルールと手順トレース |
+| 通ったときの意味 | 書いたケースの範囲で正しい | `run` は確率的、`verify` は全状態 |
+| 増やすコスト | ケース1本ずつ | ルール1行（対象は自動で広がる） |
+
+「全部試した」と言えるのは `quint verify --backend=tlc` のほうだけ。`quint run` はランダムなので pytest より広いが保証はない。この区別は教材で明示する。
+
+---
+
+## hello-lean-proof との接続
+
+[hello-lean-proof](https://github.com/nishimotz/hello-lean-proof) は Lean 4 で「証明＝探索ゲーム」を体験する教材。同じ題材（チケット販売の売り越し）を Lean で書くと、Quint との差がはっきり出る。
+
+### 同じ `purchase` を並べる
+
+Quint:
+
+```
+action purchase(u: str): bool = all {
+  phase.get(u) == Checked,
+  stock' = stock - 1,
+  sold' = sold + 1,
+  phase' = phase.set(u, Bought),
+}
+```
+
+Lean 4:
+
+```lean
+| purchase : ∀ (a b : Int) (c : Nat), 1 ≤ c → 0 < a →
+    StepFixed ⟨a, b, c⟩ ⟨a - 1, b + 1, c - 1⟩
+```
+
+Quint は「状態をこう書き換える」と素直に読める。Lean は遷移を関係として書き、証明側でその関係を帰納法に載せる。
+
+### 差が出るのは証明するところ
+
+Lean で `noOversell`（`sold ≤ 2`）をそのまま帰納法に載せると詰まる。1手進めるのに在庫との関係が要るから。だから不変条件を強化する。
+
+```lean
+def Inv (s : St) : Prop := 0 ≤ s.stock ∧ s.sold + s.stock = 2
+```
+
+これで初めて `fixed_no_oversell` が通る。
+
+> **Quint はルールをそのまま渡せば機械が全状態を調べる。Lean はルールを帰納的な形に書き直す仕事が人間に残る。その代わり、人数も在庫数も固定せずに証明が通る。**
+
+これが「ルールを書け」の Lean 側の読み替え。記事の主張を否定せずに一段深くする形になる。
+
+### どこから読むか
+
+| 順番 | リポジトリ | 得られるもの |
+|---|---|---|
+| 1 | ここ（hello-quint） | ルールを書けばケースを書かなくていい、という体験。`quint run` が pytest の代わり |
+| 2 | hello-lean-proof | 同じ題材を、状態数を数えずに一般化する。`Inv` 強化の必然性 |
+| 3 | ここに戻る | `quint verify` の「29状態を全部見た」と Lean の「任意の人数で成り立つ」の違いを言語化 |
+
+### 正直に書く弱点
+
+記事の山場の一つ「モデルベーステストで1000トレース生成 → AI の実装が578本で不一致」は、**Lean 単体では閉じない**。実装（TypeScript など）とモデルをつなぐ層が要る。Quint は `--mbt` でこの層を自前で持っている。Lean で同じことをやるなら抽出か外部突き合わせになる。ここは Lean 連載の弱点として明示する。
+
+---
+
+## ファイルの見方
 
 `ticket.qnt`:
 
@@ -85,26 +177,9 @@ action purchase(u: str): bool = all {
 }
 ```
 
-## Lean 4 版との対比
+## 実測値
 
-同じ題材を Lean 4 で書いたもの: https://github.com/nishimotz/hello-lean-proof
-
-| | Quint / TLA+ | Lean 4 |
-|---|---|---|
-| 人間が書くもの | ルール（そのまま渡せる） | ルール＋**帰納的な不変条件への強化** |
-| 探索 | `quint run`（ランダム）／`quint verify`（全状態） | 帰納法（状態数を数えない） |
-| 反例 | 手順を自動表示 | 自分で構成する |
-| 強さ | 具体的なモデルに閉じる | 人数・在庫数を固定しなくても証明が通る |
-
-Lean 側で `noOversell`（`sold ≤ 2`）を単独で帰納法に載せると詰まる。`0 ≤ stock ∧ sold + stock = 2` に強化して初めて通る。**「ルールを書く」は Lean では「帰納的な不変条件を書く」に読み替えが要る**、というのがこの2つを並べたときの差分。
-
-## ライセンス
-
-MIT
-
-## クリーンクローンでの再現確認（2026-11-22）
-
-公開後に別ディレクトリへ clone して `npm install` から通した実測:
+2026-11-22、クリーンクローンから `npm install` して実行:
 
 | コマンド | 結果 |
 |---|---|
@@ -112,4 +187,8 @@ MIT
 | `quint run ticket_fixed.qnt --invariant=noOversell` | `[ok] No violation found (64ms)` |
 | `quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc` | `55 states generated, 29 distinct states found, 0 states left on queue`、`[ok] (606ms)` |
 
-TLC 起動時に protobuf の警告が1行出るが、探索結果には影響しない。
+絶対時間は環境依存。初回は Apalache のキャッシュ生成で秒単位になる。詳細は [docs/macos-intel.md](docs/macos-intel.md)。
+
+## ライセンス
+
+MIT
