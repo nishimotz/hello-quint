@@ -28,11 +28,11 @@ npx quint run ticket.qnt --invariant=noOversell
 npx quint run ticket_fixed.qnt --invariant=noOversell
 
 # 3. 修正版: 到達可能な状態を全部調べる
-#    注意: 既定の JVM が古いと失敗する → docs/macos-intel.md
+#    注意: Java 21 以上が必要 → docs/macos-intel.md / docs/windows.md
 npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 ```
 
-`quint verify` だけは新しい JVM を要求する（Apalache の都合）。環境構築で詰まったら [docs/macos-intel.md](docs/macos-intel.md) を見る。Linux / Apple Silicon では不要な可能性が高い。
+`quint verify` だけは Java 21 以上を要求する（Apalache 0.62.4 の都合）。環境構築で詰まったら [docs/macos-intel.md](docs/macos-intel.md) または [docs/windows.md](docs/windows.md)（Windows x64 で実機検証済み）を見る。Linux / Apple Silicon でも Java 21 未満なら同様。
 
 ---
 
@@ -206,7 +206,7 @@ action purchase(u: str): bool = all {
 | `quint run ticket_fixed.qnt --invariant=noOversell` | `[ok] No violation found (64ms)` |
 | `quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc` | `55 states generated, 29 distinct states found, 0 states left on queue`、`[ok] (606ms)` |
 
-絶対時間は環境依存。初回は Apalache のキャッシュ生成で秒単位になる。詳細は [docs/macos-intel.md](docs/macos-intel.md)。
+絶対時間は環境依存。初回は Rust evaluator / Apalache の取得とキャッシュ生成で秒〜分単位になる。詳細は [docs/macos-intel.md](docs/macos-intel.md)（macOS Intel）および [docs/windows.md](docs/windows.md)（Windows x64）。
 
 ## ライセンス
 

@@ -4,9 +4,9 @@
 
 このファイルは環境構築で詰まった点だけを集めたもの。教材の本筋ではない。Linux / Apple Silicon では該当しない可能性が高い。
 
-## 1. `quint verify --backend=tlc` には新しい JVM が要る
+## 1. `quint verify --backend=tlc` には Java 21 以上が要る
 
-`--backend=tlc` は内部で Apalache 経由の TLA+ 変換を行う。Apalache 0.62.4 が `G1PeriodicGCInterval=600000` を JVM に渡すため、既定の `java` が 11 だと落ちる。
+`--backend=tlc` は内部で Apalache 経由の TLA+ 変換を行う。Apalache 0.62.4 の Unix 版ランチャー（`apalache-mc`）は `G1PeriodicGCInterval=600000` を JVM に渡すため、既定の `java` が 11 だと起動前の VM オプションの段階で落ちる。
 
 ```
 Unrecognized VM option 'G1PeriodicGCInterval=600000'
@@ -14,7 +14,7 @@ Error: Could not create the Java Virtual Machine.
 Error: A fatal exception has occurred. Program will exit.
 ```
 
-`G1PeriodicGCInterval` は JDK 12 以降のオプション。JDK 11 では認識されない。
+`G1PeriodicGCInterval` 自体は JDK 12 以降のオプションだが、Apalache 0.62.4 本体（`at.forsyte.apalache.tla.Tool`）も **Java 21（class file version 65.0）** でコンパイルされているため、Java 17 でも `UnsupportedClassVersionError` で動かない（Windows x64 実機で確認済み、詳細は [docs/windows.md](windows.md)）。Java 21 以上を使う必要がある。
 
 ### 回避
 
