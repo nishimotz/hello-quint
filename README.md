@@ -28,11 +28,11 @@ npx quint run ticket.qnt --invariant=noOversell
 npx quint run ticket_fixed.qnt --invariant=noOversell
 
 # 3. 修正版: 到達可能な状態を全部調べる
-#    注意: Java 21 以上が必要 → docs/macos-intel.md / docs/windows.md
+#    注意: Java 21 以上が必要 → docs/macos-apple-silicon.md / docs/macos-intel.md / docs/windows.md
 npx quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc
 ```
 
-`quint verify` だけは Java 21 以上を要求する（Apalache 0.62.4 の都合）。環境構築で詰まったら [docs/macos-intel.md](docs/macos-intel.md) または [docs/windows.md](docs/windows.md)（Windows x64 で実機検証済み）を見る。Linux / Apple Silicon でも Java 21 未満なら同様。
+`quint verify` だけは Java 21 以上を要求する（Apalache 0.62.4 の都合）。環境構築で詰まったら [docs/macos-apple-silicon.md](docs/macos-apple-silicon.md)（Apple Silicon で実機検証済み）、[docs/macos-intel.md](docs/macos-intel.md)、[docs/windows.md](docs/windows.md)（Windows x64 で実機検証済み）を見る。Linux でも Java 21 未満なら同様。
 
 ---
 
@@ -206,7 +206,7 @@ action purchase(u: str): bool = all {
 | `quint run ticket_fixed.qnt --invariant=noOversell` | `[ok] No violation found (64ms)` |
 | `quint verify ticket_fixed.qnt --invariant=noOversell --backend=tlc` | `55 states generated, 29 distinct states found, 0 states left on queue`、`[ok] (606ms)` |
 
-絶対時間は環境依存。初回は Rust evaluator / Apalache の取得とキャッシュ生成で秒〜分単位になる。詳細は [docs/macos-intel.md](docs/macos-intel.md)（macOS Intel）および [docs/windows.md](docs/windows.md)（Windows x64）。
+絶対時間は環境依存。初回は Rust evaluator / Apalache の取得とキャッシュ生成で秒〜分単位になる。詳細は [docs/macos-apple-silicon.md](docs/macos-apple-silicon.md)（macOS Apple Silicon）、[docs/macos-intel.md](docs/macos-intel.md)（macOS Intel）および [docs/windows.md](docs/windows.md)（Windows x64）。
 
 ## ライセンス
 

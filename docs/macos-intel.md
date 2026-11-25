@@ -2,7 +2,7 @@
 
 検証環境: macOS 15.8.3 x64（Intel）、Node 24.22.3、quint 0.33.1、Homebrew は `/usr/local`。
 
-このファイルは環境構築で詰まった点だけを集めたもの。教材の本筋ではない。Linux / Apple Silicon では該当しない可能性が高い。
+このファイルは環境構築で詰まった点だけを集めたもの。教材の本筋ではない。Apple Silicon は Homebrew のプレフィックスが違うので [macos-apple-silicon.md](macos-apple-silicon.md) を見る。Linux では該当しない可能性が高い。
 
 ## 1. `quint verify --backend=tlc` には Java 21 以上が要る
 
